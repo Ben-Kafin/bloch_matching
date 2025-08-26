@@ -604,9 +604,9 @@ def run_match(
 
 
 if __name__ == "__main__":
-    simple_dir = r"C:/Users/Benjamin Kafin/Documents/VASP/fcc/vasp541/NHC/"
-    metal_dir = r"C:/Users/Benjamin Kafin/Documents/VASP/fcc/vasp541/adatom_surface/"
-    full_dir = r"C:/Users/Benjamin Kafin/Documents/VASP/fcc/vasp541/"
+    simple_dir = r"dir/molecule/"
+    metal_dir = r"dir/surface/"
+    full_dir = r"dir/full"
 
     run_match(
         simple_dir=simple_dir,
@@ -620,4 +620,5 @@ if __name__ == "__main__":
         band_window_full=None,
         output_path=None,
         reuse_cached=True
+
     )
