@@ -553,23 +553,54 @@ class RectangularTrueBlochMatcher:
             print(f"[WARN] Could not plot cross-component heatmap: {e}")
 
         cfg = PlotConfig(
-            cmap_name_simple="coolwarm",
+            cmap_name_simple="managua_r",
             cmap_name_metal="vanimo_r",
             center_simple=40,
             center_metal=602,
-            power_simple_neg=0.36,
+            power_simple_neg=0.25,
             power_simple_pos=0.75,
             power_metal_neg=0.075,
             power_metal_pos=0.075,
-            pick_primary="blended",
-            min_simple_wspan=0.0025,
-            energy_range=(-23, 4)
+            pick_primary=False,
+            min_simple_wspan=0.01,
+            energy_range=(-25, 10),
         )
         RectAEPAWColorPlotter(cfg).plot(output_path)
         plt.show()
         print(f"[PLOT] Generated color plot from '{output_path}'")
 
 
+# ---------------------------
+# Thin wrapper
+# ---------------------------
+
+
+def run_match(
+    simple_dir: str,
+    metal_dir: str,
+    full_dir: str,
+    k_index: int = 1,
+    tol_map: float = 1e-3,
+    check_species: bool = True,
+    band_window_simple: Optional[slice] = None,
+    band_window_metal: Optional[slice] = None,
+    band_window_full: Optional[slice] = None,
+    output_path: Optional[str] = None,
+    reuse_cached: bool = False
+):
+    matcher = RectangularTrueBlochMatcher(
+        simple_dir=simple_dir,
+        metal_dir=metal_dir,
+        full_dir=full_dir,
+        k_index=k_index,
+        tol_map=tol_map,
+        check_species=check_species,
+        band_window_simple=band_window_simple,
+        band_window_metal=band_window_metal,
+        band_window_full=band_window_full,
+        reuse_cached=reuse_cached
+    )
+    matcher.run(output_path=output_path)
 # ---------------------------
 # Thin wrapper
 # ---------------------------
@@ -622,3 +653,4 @@ if __name__ == "__main__":
         reuse_cached=True
 
     )
+
