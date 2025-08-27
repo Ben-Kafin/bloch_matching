@@ -13,6 +13,9 @@ try:
 except ImportError:
     HAS_MPLCURSORS = False
 
+# import the classifier you implemented
+from component_behavior import StateBehaviorClassifier
+
 
 def _read_rect_txt_delimited(path: str) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
@@ -24,27 +27,41 @@ def _read_rect_txt_delimited(path: str) -> List[Dict[str, Any]]:
             blocks = [b.strip() for b in line.split("|")]
             if len(blocks) != 4:
                 continue
+
             full_fields = blocks[0].split()
-            s_fields = blocks[1].split()
-            m_fields = blocks[2].split()
+            s_fields    = blocks[1].split()
+            m_fields    = blocks[2].split()
+
             try:
                 full_idx = int(full_fields[0]);    E_full = float(full_fields[1])
-                s_idx = int(s_fields[0]);          s_E = float(s_fields[1])
-                s_dE = float(s_fields[2]);         s_ov = float(s_fields[3])
-                s_ws = float(s_fields[4])
-                m_idx = int(m_fields[0]);          m_E = float(m_fields[1])
-                m_dE = float(m_fields[2]);         m_ov = float(m_fields[3])
-                m_ws = float(m_fields[4])
+                s_idx    = int(s_fields[0]);       s_E    = float(s_fields[1])
+                s_dE     = float(s_fields[2]);     s_ov   = float(s_fields[3])
+                s_ws     = float(s_fields[4])
+                m_idx    = int(m_fields[0]);       m_E    = float(m_fields[1])
+                m_dE     = float(m_fields[2]);     m_ov   = float(m_fields[3])
+                m_ws     = float(m_fields[4])
                 residual = float(blocks[3])
             except Exception:
                 continue
 
             rows.append(dict(
-                full_idx=full_idx,
-                E_full=E_full,
-                simple=dict(idx=s_idx, E=s_E, dE=s_dE, ov_best=s_ov, w_span=s_ws),
-                metal =dict(idx=m_idx, E=m_E, dE=m_dE, ov_best=m_ov, w_span=m_ws),
-                residual=residual,
+                full_idx = full_idx,
+                E_full   = E_full,
+                simple   = dict(
+                    idx     = s_idx,
+                    E       = s_E,
+                    dE      = s_dE,
+                    ov_best = s_ov,
+                    w_span  = s_ws
+                ),
+                metal    = dict(
+                    idx     = m_idx,
+                    E       = m_E,
+                    dE      = m_dE,
+                    ov_best = m_ov,
+                    w_span  = m_ws
+                ),
+                residual = residual,
             ))
 
     if not rows:
@@ -61,7 +78,7 @@ def _read_ov_all(path: str) -> Tuple[
         lambda: {"simple": [], "metal": []}
     )
     simple_idx_E: Dict[int, float] = {}
-    metal_idx_E: Dict[int, float] = {}
+    metal_idx_E: Dict[int, float]  = {}
 
     with open(path, "r") as f:
         for line in f:
@@ -75,14 +92,20 @@ def _read_ov_all(path: str) -> Tuple[
             try:
                 full_idx = int(parts[1])
                 comp_idx = int(parts[2])
-                E_comp = float(parts[3])
-                dE_comp = float(parts[4])
-                ov = float(parts[5])
-                w_span = float(parts[6])
+                E_comp   = float(parts[3])
+                dE_comp  = float(parts[4])
+                ov        = float(parts[5])
+                w_span    = float(parts[6])
             except Exception:
                 continue
 
-            record = dict(comp_idx=comp_idx, E=E_comp, dE=dE_comp, ov=ov, w_span=w_span)
+            record = dict(
+                comp_idx = comp_idx,
+                E        = E_comp,
+                dE       = dE_comp,
+                ov       = ov,
+                w_span   = w_span
+            )
             if comp == "simple":
                 by_full[full_idx]["simple"].append(record)
                 simple_idx_E.setdefault(comp_idx, E_comp)
@@ -91,7 +114,7 @@ def _read_ov_all(path: str) -> Tuple[
                 metal_idx_E.setdefault(comp_idx, E_comp)
 
     simple_pairs = list(simple_idx_E.items())
-    metal_pairs = list(metal_idx_E.items())
+    metal_pairs  = list(metal_idx_E.items())
     return by_full, simple_pairs, metal_pairs
 
 
@@ -105,7 +128,7 @@ class PlotConfig:
     power_simple_pos: float                     = 0.75
     power_metal_neg: float                      = 0.075
     power_metal_pos: float                      = 0.075
-    min_simple_wspan: float                     = 0.01  
+    min_simple_wspan: float                     = 0.01
     figsize: Tuple[float, float]                = (8.0, 8.0)
     lw_stick: float                             = 2.0
     xlabel: str                                 = "Energy (eV)"
@@ -121,6 +144,7 @@ class PlotConfig:
     show_colorbar: bool                         = False
     pick_primary: Any                           = True
     energy_range: Optional[Tuple[float, float]] = None
+
 
 
 class RectAEPAWColorPlotter:
@@ -145,10 +169,9 @@ class RectAEPAWColorPlotter:
     ) -> Dict[int, Tuple[float, float, float, float]]:
         if not pairs:
             return {}
-
         ordered = sorted(pairs, key=lambda t: t[1])
-        idxs = [idx for idx, _ in ordered]
-        n = len(ordered)
+        idxs    = [idx for idx, _ in ordered]
+        n       = len(ordered)
 
         if center_idx is not None and center_idx in idxs:
             pivot = idxs.index(center_idx)
@@ -157,7 +180,7 @@ class RectAEPAWColorPlotter:
 
         neg_count = max(pivot, 1)
         pos_count = max(n - pivot - 1, 1)
-        cmap = self._get_cmap(cmap_name)
+        cmap      = self._get_cmap(cmap_name)
 
         def warp(r: float) -> float:
             a = abs(r)
@@ -172,11 +195,9 @@ class RectAEPAWColorPlotter:
                 r = (i - pivot) / neg_count
             else:
                 r = (i - pivot) / pos_count
-
             w = warp(r)
             v = 0.5 + 0.5 * np.sign(r) * w
             colors[idx] = cmap(np.clip(v, 0.0, 1.0))
-
         return colors
 
     def _mix_component_color(
@@ -187,15 +208,14 @@ class RectAEPAWColorPlotter:
     ) -> Tuple[float, float, float, float]:
         if not recs:
             return default
-        num = np.zeros(3, dtype=float)
+        num   = np.zeros(3, dtype=float)
         denom = 0.0
         for r in recs:
             idx = int(r["comp_idx"])
             w   = max(float(r["ov"]), 0.0)
             c   = base_colors.get(idx, default)
-            if hasattr(c, "__len__") and len(c) >= 3:
-                num[:3] += w * np.array(c[:3], dtype=float)
-                denom  += w
+            num[:3] += w * np.array(c[:3], dtype=float)
+            denom  += w
         if denom <= 0:
             return default
         rgb = num / denom
@@ -203,19 +223,19 @@ class RectAEPAWColorPlotter:
 
     def load(self, path: str):
         rows = _read_rect_txt_delimited(path)
-        simple_pairs = {}
-        metal_pairs  = {}
+        simple_pairs: Dict[int, float] = {}
+        metal_pairs:  Dict[int, float] = {}
         for r in rows:
             s, m = r["simple"], r["metal"]
             if s["idx"] > 0:
-                simple_pairs[s["idx"]] = s["E"]
+                simple_pairs.setdefault(s["idx"], s["E"])
             if m["idx"] > 0:
-                metal_pairs[m["idx"]] = m["E"]
-        return dict(
-            rows=rows,
-            simple_pairs=list(simple_pairs.items()),
-            metal_pairs=list(metal_pairs.items()),
-        )
+                metal_pairs.setdefault(m["idx"], m["E"])
+        return {
+            "rows": rows,
+            "simple_pairs": list(simple_pairs.items()),
+            "metal_pairs":  list(metal_pairs.items()),
+        }
 
     def plot(self, path: str, ax: Optional[plt.Axes] = None):
         data = self.load(path)
@@ -225,7 +245,7 @@ class RectAEPAWColorPlotter:
             os.path.dirname(path),
             "band_matches_rectangular_all.txt"
         )
-        by_full = {}
+        by_full: Dict[int, Dict[str, List[Dict[str, float]]]] = {}
         ov_all_simple_pairs: List[Tuple[int, float]] = []
         ov_all_metal_pairs:  List[Tuple[int, float]] = []
         if os.path.isfile(ov_all_path):
@@ -234,7 +254,34 @@ class RectAEPAWColorPlotter:
             except Exception:
                 by_full = {}
 
-        # --- build color dictionaries ---
+        # instantiate the classifier
+        classifier = StateBehaviorClassifier()
+
+        # group & classify simple components
+        simple_groups: Dict[int, List[Dict[str, float]]] = defaultdict(list)
+        for comps in by_full.values():
+            for rec in comps.get("simple", []):
+                simple_groups[rec["comp_idx"]].append({
+                    "dE": rec["dE"], "ov": rec["ov"]
+                })
+        simple_class_map = {
+            idx: classifier.classify_state(records)
+            for idx, records in simple_groups.items()
+        }
+
+        # group & classify metal components
+        metal_groups: Dict[int, List[Dict[str, float]]] = defaultdict(list)
+        for comps in by_full.values():
+            for rec in comps.get("metal", []):
+                metal_groups[rec["comp_idx"]].append({
+                    "dE": rec["dE"], "ov": rec["ov"]
+                })
+        metal_class_map = {
+            idx: classifier.classify_state(records)
+            for idx, records in metal_groups.items()
+        }
+
+        # build color dictionaries
         simple_map = dict(data["simple_pairs"])
         for idx, E in ov_all_simple_pairs:
             simple_map.setdefault(idx, E)
@@ -259,7 +306,7 @@ class RectAEPAWColorPlotter:
             mode="power"
         )
 
-        # --- prepare figure & axes ---
+        # prepare figure & axes
         if ax is not None:
             fig = ax.figure; fig.clf()
             axes = fig.subplots(3, 1, sharex=True)
@@ -269,7 +316,7 @@ class RectAEPAWColorPlotter:
             )
         ax_m, ax_s, ax_f = axes
 
-        # --- fermi & center lines ---
+        # fermi lines at 0eV
         if self.cfg.show_fermi_line:
             for a in axes:
                 a.axvline(0.0,
@@ -277,44 +324,126 @@ class RectAEPAWColorPlotter:
                           linestyle=self.cfg.fermi_line_style,
                           linewidth=1.0, alpha=0.7)
 
-        if self.cfg.center_simple is not None:
-            cs = int(self.cfg.center_simple)
-            e_map = dict(data["simple_pairs"])
-            if cs in e_map:
-                ax_s.axvline(e_map[cs], color="k", ls=":", lw=1)
-
-        if self.cfg.center_metal is not None:
-            cm = int(self.cfg.center_metal)
-            e_map = dict(data["metal_pairs"])
-            if cm in e_map:
-                ax_m.axvline(e_map[cm], color="k", ls=":", lw=1)
-
-        # --- metal sticks ---
-        for idx, E in sorted(data["metal_pairs"], key=lambda t: t[1]):
-            ax_m.vlines(E, 0, 1,
-                        color=metal_colors.get(idx, "black"),
-                        linestyle="-", lw=self.cfg.lw_stick)
+        # --- metal sticks + hover classification ---
+        artists_m: List[Any] = []
+        hover_m:   List[str] = []
+        
+        for comp_idx, E in sorted(data["metal_pairs"], key=lambda t: t[1]):
+            color = metal_colors.get(comp_idx, "black")
+            line  = ax_m.vlines(
+                E, 0, 1,
+                color=color,
+                linestyle="-",
+                lw=self.cfg.lw_stick
+            )
+            artists_m.append(line)
+        
+            # fetch classification (must include "total_ov")
+            info = metal_class_map.get(
+                comp_idx,
+                {"mode": "shift", "mean_shift": 0.0, "total_ov": 0.0}
+            )
+        
+            # prefix now shows band index, total overlap, and energy
+            prefix = (
+                f"band idx {comp_idx}, "
+                f"E {E:+.3f} eV\n"
+                f"total_ov {info['total_ov']:.3f} \n"
+            )
+        
+            if info["mode"] == "shift":
+                body = f"net shift {info['mean_shift']:+.3f} eV"
+            else:  # split
+                body = (
+                    f"up   E={info['E_plus']:+.3f}, I={info['I_plus']:.3f}\n"
+                    f"down E={info['E_minus']:+.3f}, I={info['I_minus']:.3f}"
+                )
+        
+            hover_m.append(prefix + body)
+        
         ax_m.set_title(self.cfg.title_metal)
         ax_m.set_ylabel(self.cfg.ylabel)
-
-        # --- simple sticks ---
-        for idx, E in sorted(data["simple_pairs"], key=lambda t: t[1]):
-            ax_s.vlines(E, 0, 1,
-                        color=simple_colors.get(idx, "black"),
-                        linestyle="-", lw=self.cfg.lw_stick)
+        
+        if self.cfg.annotate_on_hover and self.cfg.interactive and artists_m and HAS_MPLCURSORS:
+            cursor_m = mplcursors.cursor(artists_m, hover=True)
+            @cursor_m.connect("add")
+            def _on_add_m(sel):
+                idx = artists_m.index(sel.artist)
+                sel.annotation.set_text(hover_m[idx])
+                sel.annotation.get_bbox_patch().set(alpha=0.9)
+        elif self.cfg.annotate_on_hover and self.cfg.interactive:
+            ax_m.text(
+                0.01, 0.01,
+                "Tip: pip install mplcursors for hover details",
+                transform=ax_m.transAxes, fontsize=8, color="0.4"
+            )
+        
+        
+        # --- simple sticks + hover classification ---
+        artists_s: List[Any] = []
+        hover_s:   List[str] = []
+        
+        for comp_idx, E in sorted(data["simple_pairs"], key=lambda t: t[1]):
+            color = simple_colors.get(comp_idx, "black")
+            line  = ax_s.vlines(
+                E, 0, 1,
+                color=color,
+                linestyle="-",
+                lw=self.cfg.lw_stick
+            )
+            artists_s.append(line)
+        
+            # fetch classification (must include "total_ov")
+            info = simple_class_map.get(
+                comp_idx,
+                {"mode": "shift", "mean_shift": 0.0, "total_ov": 0.0}
+            )
+        
+            # prefix now shows band index, total overlap, and energy
+            prefix = (
+                f"band idx {comp_idx}, "
+                f"E {E:+.3f} eV\n"
+                f"total_ov {info['total_ov']:.3f} \n"
+                
+            )
+        
+            if info["mode"] == "shift":
+                body = f"net shift {info['mean_shift']:+.3f} eV"
+            else:  # split
+                body = (
+                    f"up   E={info['E_plus']:+.3f}, I={info['I_plus']:.3f}\n"
+                    f"down E={info['E_minus']:+.3f}, I={info['I_minus']:.3f}"
+                )
+        
+            hover_s.append(prefix + body)
+        
         ax_s.set_title(self.cfg.title_simple)
         ax_s.set_ylabel(self.cfg.ylabel)
+        
+        if self.cfg.annotate_on_hover and self.cfg.interactive and artists_s and HAS_MPLCURSORS:
+            cursor_s = mplcursors.cursor(artists_s, hover=True)
+            @cursor_s.connect("add")
+            def _on_add_s(sel):
+                idx = artists_s.index(sel.artist)
+                sel.annotation.set_text(hover_s[idx])
+                sel.annotation.get_bbox_patch().set(alpha=0.9)
+        elif self.cfg.annotate_on_hover and self.cfg.interactive:
+            ax_s.text(
+                0.01, 0.01,
+                "Tip: pip install mplcursors for hover details",
+                transform=ax_s.transAxes, fontsize=8, color="0.4"
+            )
 
-        # --- full sticks with hover info ---
-        artists: List[Any] = []
-        hover_info: List[str] = []
-
+        # --- full sticks with existing hover info ---
+        artists_f: List[Any] = []
+        hover_f:   List[str] = []
         for rec in rows:
             E_full = float(rec["E_full"])
             s, m   = rec["simple"], rec["metal"]
             ws, wm = float(s["w_span"]), float(m["w_span"])
             mode   = self.cfg.pick_primary
 
+            # original True/False/blended logic unchanged...
             if mode is True:
                 prefer_simple = ws >= wm
                 if prefer_simple and s["idx"] > 0:
@@ -323,32 +452,28 @@ class RectAEPAWColorPlotter:
                     color = metal_colors.get(m["idx"], "black")
                 else:
                     color = "0.4"
-
             elif mode is False:
-                # before:   if s["idx"] > 0 and ws > 0.0025:
                 if s["idx"] > 0 and ws > self.cfg.min_simple_wspan:
                     color = simple_colors.get(s["idx"], "black")
                 else:
                     color = metal_colors.get(m["idx"], "black")
-
             elif mode == "blended":
                 full_idx = int(rec["full_idx"])
-                have_all = isinstance(by_full, dict) and full_idx in by_full
+                have_all = full_idx in by_full
                 if have_all:
                     recs_s = by_full[full_idx]["simple"]
                     recs_m = by_full[full_idx]["metal"]
                     c_s = np.array(self._mix_component_color(recs_s, simple_colors))
                     c_m = np.array(self._mix_component_color(recs_m, metal_colors))
                 else:
-                    c_s = np.array(simple_colors.get(s["idx"], (0.4, 0.4, 0.4, 1.0)))
-                    c_m = np.array(metal_colors.get(m["idx"], (0.4, 0.4, 0.4, 1.0)))
+                    c_s = np.array(simple_colors.get(s["idx"], (0.4,0.4,0.4,1.0)))
+                    c_m = np.array(metal_colors.get(m["idx"],  (0.4,0.4,0.4,1.0)))
                 total_w = ws + wm
                 if total_w > 0:
-                    blend = (c_s[:3] * ws + c_m[:3] * wm) / total_w
+                    blend = (c_s[:3]*ws + c_m[:3]*wm) / total_w
                 else:
-                    blend = np.array([0.4, 0.4, 0.4])
-                color = (float(blend[0]), float(blend[1]), float(blend[2]), 1.0)
-
+                    blend = np.array([0.4,0.4,0.4])
+                color = (*blend[:3], 1.0)
             else:
                 raise ValueError("pick_primary must be True, False, or 'blended'")
 
@@ -356,8 +481,8 @@ class RectAEPAWColorPlotter:
                                color=color,
                                linestyle="-",
                                lw=self.cfg.lw_stick)
-            artists.append(line)
-            hover_info.append(
+            artists_f.append(line)
+            hover_f.append(
                 f"full_idx: {int(rec['full_idx'])}\n"
                 f"E_full: {E_full:+.3f}\n"
                 f"simple: idx {int(s['idx'])}, E {s['E']:+.3f}, "
@@ -379,18 +504,18 @@ class RectAEPAWColorPlotter:
 
         fig.tight_layout()
 
-        if self.cfg.annotate_on_hover and self.cfg.interactive and artists and HAS_MPLCURSORS:
-            cursor = mplcursors.cursor(artists, hover=True)
-            @cursor.connect("add")
-            def _on_add(sel):
-                idx = artists.index(sel.artist)
-                sel.annotation.set_text(hover_info[idx])
+        if self.cfg.annotate_on_hover and self.cfg.interactive and artists_f and HAS_MPLCURSORS:
+            cursor_f = mplcursors.cursor(artists_f, hover=True)
+            @cursor_f.connect("add")
+            def _(sel):
+                idx = artists_f.index(sel.artist)
+                sel.annotation.set_text(hover_f[idx])
                 sel.annotation.get_bbox_patch().set(alpha=0.9)
-
         elif self.cfg.annotate_on_hover and self.cfg.interactive:
-            ax_f.text(0.01, 0.01,
-                      "Tip: pip install mplcursors for hover details",
-                      transform=ax_f.transAxes,
-                      fontsize=8, color="0.4")
+            ax_f.text(
+                0.01, 0.01,
+                "Tip: pip install mplcursors for hover details",
+                transform=ax_f.transAxes, fontsize=8, color="0.4"
+            )
 
         return fig, axes
