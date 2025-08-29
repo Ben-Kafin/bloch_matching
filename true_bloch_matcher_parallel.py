@@ -45,7 +45,9 @@ class RectangularTrueBlochMatcher:
                  band_window_simple=None,
                  band_window_metal=None,
                  band_window_full=None,
-                 reuse_cached=False):
+                 reuse_cached=False,
+                 align_full_to_metal_min_band: int | None = None):
+
         self.simple_dir = simple_dir
         self.metal_dir = metal_dir
         self.full_dir = full_dir
@@ -56,6 +58,8 @@ class RectangularTrueBlochMatcher:
         self.band_window_metal = band_window_metal
         self.band_window_full = band_window_full
         self.reuse_cached = reuse_cached
+        self.align_full_to_metal_min_band = align_full_to_metal_min_band
+        
 
     class SystemData:
         def __init__(self, name: str, directory: str):
@@ -367,10 +371,13 @@ class RectangularTrueBlochMatcher:
 
 
         # ─── 3) ADJUST GAMMA‐POINT ENERGIES ────────────────────────────────
-        print("[STEP] Adjusting energies relative to Fermi levels…")
+        print("[STEP] Adjusting energies (Fermi + optional full↔metal‐min)…")
+        
+        # read Fermi shifts
         ef_full  = self.read_fermi_from_doscar(self.full_dir)
         ef_metal = self.read_fermi_from_doscar(self.metal_dir)
-
+        
+        # load or reuse cached gamma‐point energies
         e_f = (self.sys_f.gamma_energies.copy()
                if not skip_build else
                self.read_gamma_energies_from_eigenval(self.full_dir, 1))
@@ -380,10 +387,31 @@ class RectangularTrueBlochMatcher:
         e_s = (self.sys_s.gamma_energies.copy()
                if not skip_build else
                self.read_gamma_energies_from_eigenval(self.simple_dir, 1))
-
+        
+        # subtract each system’s Fermi
         e_f -= ef_full
         e_m -= ef_metal
-        e_s -= (e_s.min() - e_f.min())
+        
+        # optional: align full‐state band N to the metal‐system minimum
+        if self.align_full_to_metal_min_band is not None:
+            fb = int(self.align_full_to_metal_min_band) - 1
+            # chosen full‐band energy
+            full_val = float(e_f[fb] if e_f.ndim == 1 else e_f[0, fb])
+            # metal‐system minimum
+            metal_min = float(np.min(e_m) if e_m.ndim == 1 else np.min(e_m[0]))
+            delta = full_val - metal_min
+            e_f -= delta
+            print(
+                f"[ALIGN] Shifted full E by {-delta:+.3f} eV so band {fb+1} "
+                f"({full_val:+.3f} eV) lines up with metal min {metal_min:+.3f} eV"
+            )
+        
+        # finally realign simple‐system minimum to full‐system minimum
+        if e_s.ndim == 1:
+            sf_min, ff_min = e_s.min(), e_f.min()
+        else:
+            sf_min, ff_min = e_s[0].min(), e_f[0].min()
+        e_s -= (sf_min - ff_min)
 
         # ─── 4) POST‐BUILD SLICING ─────────────────────────────────────────
         if self.band_window_full is not None:
@@ -551,7 +579,7 @@ class RectangularTrueBlochMatcher:
             print(f"[PLOT] Saved cross-component heatmap to {heatmap_path}")
         except Exception as e:
             print(f"[WARN] Could not plot cross-component heatmap: {e}")
-
+"""
         cfg = PlotConfig(
             cmap_name_simple="managua_r",
             cmap_name_metal="vanimo_r",
@@ -568,12 +596,11 @@ class RectangularTrueBlochMatcher:
         RectAEPAWColorPlotter(cfg).plot(output_path)
         plt.show()
         print(f"[PLOT] Generated color plot from '{output_path}'")
-
+"""
 
 # ---------------------------
 # Thin wrapper
 # ---------------------------
-
 
 def run_match(
     simple_dir: str,
@@ -582,12 +609,16 @@ def run_match(
     k_index: int = 1,
     tol_map: float = 1e-3,
     check_species: bool = True,
-    band_window_simple: Optional[slice] = None,
-    band_window_metal: Optional[slice] = None,
-    band_window_full: Optional[slice] = None,
-    output_path: Optional[str] = None,
-    reuse_cached: bool = False
-):
+    band_window_simple: slice | None = None,
+    band_window_metal: slice | None  = None,
+    band_window_full: slice | None   = None,
+    output_path: str | None          = None,
+    reuse_cached: bool               = False
+) -> str:
+    """
+    Build (or reload) true Bloch states and write out the band‐matches file.
+    Returns the path to band_matches_rectangular.txt.
+    """
     matcher = RectangularTrueBlochMatcher(
         simple_dir=simple_dir,
         metal_dir=metal_dir,
@@ -598,59 +629,53 @@ def run_match(
         band_window_simple=band_window_simple,
         band_window_metal=band_window_metal,
         band_window_full=band_window_full,
-        reuse_cached=reuse_cached
+        reuse_cached=reuse_cached,
+        align_full_to_metal_min_band=17   # <-- baked‐in alignment
     )
     matcher.run(output_path=output_path)
-# ---------------------------
-# Thin wrapper
-# ---------------------------
 
-
-def run_match(
-    simple_dir: str,
-    metal_dir: str,
-    full_dir: str,
-    k_index: int = 1,
-    tol_map: float = 1e-3,
-    check_species: bool = True,
-    band_window_simple: Optional[slice] = None,
-    band_window_metal: Optional[slice] = None,
-    band_window_full: Optional[slice] = None,
-    output_path: Optional[str] = None,
-    reuse_cached: bool = False
-):
-    matcher = RectangularTrueBlochMatcher(
-        simple_dir=simple_dir,
-        metal_dir=metal_dir,
-        full_dir=full_dir,
-        k_index=k_index,
-        tol_map=tol_map,
-        check_species=check_species,
-        band_window_simple=band_window_simple,
-        band_window_metal=band_window_metal,
-        band_window_full=band_window_full,
-        reuse_cached=reuse_cached
-    )
-    matcher.run(output_path=output_path)
+    # if user didn’t supply a path, use the default name in full_dir
+    if output_path is None:
+        output_path = os.path.join(full_dir, "band_matches_rectangular.txt")
+    return output_path
 
 
 if __name__ == "__main__":
-    simple_dir = r"dir/molecule/"
-    metal_dir = r"dir/surface/"
-    full_dir = r"dir/full"
+    simple_dir = r"dir"
+    metal_dir  = r"dir"
+    full_dir   = r"dir"
 
-    run_match(
+    # 1) build or reload the true‐Bloch matches
+    match_file = run_match(
         simple_dir=simple_dir,
         metal_dir=metal_dir,
         full_dir=full_dir,
         k_index=1,
         tol_map=1e-3,
         check_species=True,
-        band_window_simple=slice(0,42),
+        band_window_simple=slice(0, 42),
         band_window_metal=None,
         band_window_full=None,
         output_path=None,
         reuse_cached=True
+    )
+    print(f"[MATCH] Written matches to '{match_file}'")
 
+    # 2) now plot using your preferred color config
+    cfg = PlotConfig(
+        cmap_name_simple="managua_r",
+        cmap_name_metal="vanimo_r",
+        center_simple=40,
+        center_metal=602,
+        power_simple_neg=0.25,
+        power_simple_pos=0.75,
+        power_metal_neg=0.075,
+        power_metal_pos=0.075,
+        pick_primary=False,
+        min_simple_wspan=0.011,
+        energy_range=(-25, 10),
     )
 
+    fig, axes = RectAEPAWColorPlotter(cfg).plot(match_file)
+    plt.show()
+    print(f"[PLOT] Generated color plot from '{match_file}'")
