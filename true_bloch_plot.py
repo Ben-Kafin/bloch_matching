@@ -14,7 +14,8 @@ except ImportError:
     HAS_MPLCURSORS = False
 
 # import the classifier you implemented
-from component_behavior import StateBehaviorClassifier
+#from component_behavior import StateBehaviorClassifier
+from comp_behav_var import StateBehaviorClassifier
 
 
 def _read_rect_txt_delimited(path: str) -> List[Dict[str, Any]]:
@@ -144,6 +145,9 @@ class PlotConfig:
     show_colorbar: bool                         = False
     pick_primary: Any                           = True
     energy_range: Optional[Tuple[float, float]] = None
+    align_full_to_metal_min_band: Optional[int] = None
+
+
 
 
 
@@ -253,6 +257,15 @@ class RectAEPAWColorPlotter:
                 by_full, ov_all_simple_pairs, ov_all_metal_pairs = _read_ov_all(ov_all_path)
             except Exception:
                 by_full = {}
+        
+        # --- now unconditionally dump the summaries via an instance call ---
+        classifier = StateBehaviorClassifier()
+        out_dir    = os.path.dirname(path) or "."
+        simple_out = os.path.join(out_dir, "simple_behavior.txt")
+        metal_out  = os.path.join(out_dir, "metal_behavior.txt")
+        
+        # This must be an instance method on your classifier:
+        classifier.write_component_summaries(by_full, simple_out, metal_out)
 
         # instantiate the classifier
         classifier = StateBehaviorClassifier()
@@ -325,6 +338,7 @@ class RectAEPAWColorPlotter:
                           linewidth=1.0, alpha=0.7)
 
         # --- metal sticks + hover classification ---
+        # --- metal sticks + hover classification ---
         artists_m: List[Any] = []
         hover_m:   List[str] = []
         
@@ -338,25 +352,31 @@ class RectAEPAWColorPlotter:
             )
             artists_m.append(line)
         
-            # fetch classification (must include "total_ov")
+            # fetch the classifier output (mode, mean_shift, variance, E+/I+/E-/I-)
             info = metal_class_map.get(
                 comp_idx,
-                {"mode": "shift", "mean_shift": 0.0, "total_ov": 0.0}
+                {"mode": "shift", "mean_shift": 0.0, "variance": 0.0}
             )
+            ms  = float(info["mean_shift"])
+            var = float(info["variance"])
         
-            # prefix now shows band index, total overlap, and energy
-            prefix = (
-                f"band idx {comp_idx}, "
-                f"E {E:+.3f} eV\n"
-                f"total_ov {info['total_ov']:.3f} \n"
-            )
+            prefix = f"band idx {comp_idx}, E {E:+.3f} eV\n"
         
             if info["mode"] == "shift":
-                body = f"net shift {info['mean_shift']:+.3f} eV"
-            else:  # split
+                # pure shift: show net shift + variance
                 body = (
-                    f"up   E={info['E_plus']:+.3f}, I={info['I_plus']:.3f}\n"
-                    f"down E={info['E_minus']:+.3f}, I={info['I_minus']:.3f}"
+                    f"net shift  {ms:+.3f} eV\n"
+                    f"variance   {var:.3f} eV^2"
+                )
+            else:
+                # split: show up/down then mean_shift + variance
+                Ep = float(info["E_plus"]);  Ip = float(info["I_plus"])
+                Em = float(info["E_minus"]); Im = float(info["I_minus"])
+                body = (
+                    f"up    E={Ep:+.3f}, I={Ip:.3f}\n"
+                    f"down  E={Em:+.3f}, I={Im:.3f}\n"
+                    f"mean shift {ms:+.3f} eV\n"
+                    f"variance   {var:.3f} eV^2"
                 )
         
             hover_m.append(prefix + body)
@@ -377,8 +397,8 @@ class RectAEPAWColorPlotter:
                 "Tip: pip install mplcursors for hover details",
                 transform=ax_m.transAxes, fontsize=8, color="0.4"
             )
-        
-        
+            
+        # --- simple sticks + hover classification ---
         # --- simple sticks + hover classification ---
         artists_s: List[Any] = []
         hover_s:   List[str] = []
@@ -393,26 +413,28 @@ class RectAEPAWColorPlotter:
             )
             artists_s.append(line)
         
-            # fetch classification (must include "total_ov")
             info = simple_class_map.get(
                 comp_idx,
-                {"mode": "shift", "mean_shift": 0.0, "total_ov": 0.0}
+                {"mode": "shift", "mean_shift": 0.0, "variance": 0.0}
             )
+            ms  = float(info["mean_shift"])
+            var = float(info["variance"])
         
-            # prefix now shows band index, total overlap, and energy
-            prefix = (
-                f"band idx {comp_idx}, "
-                f"E {E:+.3f} eV\n"
-                f"total_ov {info['total_ov']:.3f} \n"
-                
-            )
+            prefix = f"band idx {comp_idx}, E {E:+.3f} eV\n"
         
             if info["mode"] == "shift":
-                body = f"net shift {info['mean_shift']:+.3f} eV"
-            else:  # split
                 body = (
-                    f"up   E={info['E_plus']:+.3f}, I={info['I_plus']:.3f}\n"
-                    f"down E={info['E_minus']:+.3f}, I={info['I_minus']:.3f}"
+                    f"net shift  {ms:+.3f} eV\n"
+                    f"variance   {var:.3f} eV^2"
+                )
+            else:
+                Ep = float(info["E_plus"]);  Ip = float(info["I_plus"])
+                Em = float(info["E_minus"]); Im = float(info["I_minus"])
+                body = (
+                    f"up    E={Ep:+.3f}, I={Ip:.3f}\n"
+                    f"down  E={Em:+.3f}, I={Im:.3f}\n"
+                    f"mean shift {ms:+.3f} eV\n"
+                    f"variance   {var:.3f} eV^2"
                 )
         
             hover_s.append(prefix + body)
