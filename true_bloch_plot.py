@@ -15,7 +15,7 @@ except ImportError:
 
 # import the classifier you implemented
 #from component_behavior import StateBehaviorClassifier
-from comp_behav_var import StateBehaviorClassifier
+from component_bonding_behavior import StateBehaviorClassifier
 
 
 def _read_rect_txt_delimited(path: str) -> List[Dict[str, Any]]:
@@ -541,3 +541,4 @@ class RectAEPAWColorPlotter:
             )
 
         return fig, axes
+
