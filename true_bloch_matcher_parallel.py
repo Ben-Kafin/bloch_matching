@@ -676,6 +676,7 @@ if __name__ == "__main__":
         energy_range=(-25, 10),
     )
 
-    fig, axes = RectAEPAWColorPlotter(cfg).plot(match_file)
+    fig, axes = RectAEPAWColorPlotter(cfg).plot(match_file, bonding=True)
     plt.show()
     print(f"[PLOT] Generated color plot from '{match_file}'")
+
