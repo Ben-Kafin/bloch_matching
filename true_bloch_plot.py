@@ -241,7 +241,7 @@ class RectAEPAWColorPlotter:
             "metal_pairs":  list(metal_pairs.items()),
         }
 
-    def plot(self, path: str, ax: Optional[plt.Axes] = None):
+    def plot(self, path: str, ax: Optional[plt.Axes] = None, bonding: bool = False):
         data = self.load(path)
         rows = data["rows"]
 
@@ -266,31 +266,29 @@ class RectAEPAWColorPlotter:
         
         # This must be an instance method on your classifier:
         classifier.write_component_summaries(by_full, simple_out, metal_out)
+        # choose between normal vs. zero‐cross (“bonding”) classification
+        classify_fn = (
+            classifier.classify_state_bonding
+            if bonding
+            else classifier.classify_state
+        )
 
-        # instantiate the classifier
-        classifier = StateBehaviorClassifier()
-
-        # group & classify simple components
+        # group full rec-lists (keep 'E', 'dE', 'ov') by component index
         simple_groups: Dict[int, List[Dict[str, float]]] = defaultdict(list)
+        metal_groups:  Dict[int, List[Dict[str, float]]] = defaultdict(list)
         for comps in by_full.values():
             for rec in comps.get("simple", []):
-                simple_groups[rec["comp_idx"]].append({
-                    "dE": rec["dE"], "ov": rec["ov"]
-                })
+                simple_groups[rec["comp_idx"]].append(rec)
+            for rec in comps.get("metal", []):
+                metal_groups[rec["comp_idx"]].append(rec)
+
+        # build classification maps using the selected function
         simple_class_map = {
-            idx: classifier.classify_state(records)
+            idx: classify_fn(records)
             for idx, records in simple_groups.items()
         }
-
-        # group & classify metal components
-        metal_groups: Dict[int, List[Dict[str, float]]] = defaultdict(list)
-        for comps in by_full.values():
-            for rec in comps.get("metal", []):
-                metal_groups[rec["comp_idx"]].append({
-                    "dE": rec["dE"], "ov": rec["ov"]
-                })
         metal_class_map = {
-            idx: classifier.classify_state(records)
+            idx: classify_fn(records)
             for idx, records in metal_groups.items()
         }
 
@@ -371,9 +369,11 @@ class RectAEPAWColorPlotter:
             else:
                 # split: show up/down then mean_shift + variance
                 Ep = float(info["E_plus"]);  Ip = float(info["I_plus"])
+                Ez = float(info['E_zero']);  Iz = float(info['I_zero'])
                 Em = float(info["E_minus"]); Im = float(info["I_minus"])
                 body = (
                     f"up    E={Ep:+.3f}, I={Ip:.3f}\n"
+                    f"zero  E={Ez:+.3f}, I={Iz:.3f}\n"
                     f"down  E={Em:+.3f}, I={Im:.3f}\n"
                     f"mean shift {ms:+.3f} eV\n"
                     f"variance   {var:.3f} eV^2"
@@ -429,9 +429,11 @@ class RectAEPAWColorPlotter:
                 )
             else:
                 Ep = float(info["E_plus"]);  Ip = float(info["I_plus"])
+                Ez = float(info['E_zero']);  Iz = float(info['I_zero'])
                 Em = float(info["E_minus"]); Im = float(info["I_minus"])
                 body = (
                     f"up    E={Ep:+.3f}, I={Ip:.3f}\n"
+                    f"zero  E={Ez:+.3f}, I={Iz:.3f}\n"
                     f"down  E={Em:+.3f}, I={Im:.3f}\n"
                     f"mean shift {ms:+.3f} eV\n"
                     f"variance   {var:.3f} eV^2"
@@ -541,4 +543,3 @@ class RectAEPAWColorPlotter:
             )
 
         return fig, axes
-
