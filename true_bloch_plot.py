@@ -458,16 +458,44 @@ class RectAEPAWColorPlotter:
                 transform=ax_s.transAxes, fontsize=8, color="0.4"
             )
 
-        # --- full sticks with existing hover info ---
+        # --- full sticks with largest‐shift on top ---
+        # build list of (abs_shift, rec) tuples
+        full_order: List[Tuple[float, Dict[str, Any]]] = []
+        for rec in rows:
+            s, m   = rec["simple"], rec["metal"]
+            ws, wm = float(s["w_span"]), float(m["w_span"])
+            mode   = self.cfg.pick_primary
+
+            # figure out which dE to use
+            if mode is True:
+                shift = s["dE"] if ws >= wm else m["dE"]
+            elif mode is False:
+                if s["idx"] > 0 and ws > self.cfg.min_simple_wspan:
+                    shift = s["dE"]
+                else:
+                    shift = m["dE"]
+            elif mode == "blended":
+                # fallback: use net mean_shift from classifier
+                info = simple_class_map.get(s["idx"], {"mean_shift": 0.0})
+                shift = info["mean_shift"]
+            else:
+                raise ValueError("pick_primary must be True, False or 'blended'")
+
+            full_order.append((abs(shift), rec))
+
+        # sort ascending → small shifts first, big shifts drawn last
+        full_order.sort(key=lambda x: x[0])
+
+        # now draw in that order
         artists_f: List[Any] = []
         hover_f:   List[str] = []
-        for rec in rows:
+        for _, rec in full_order:
             E_full = float(rec["E_full"])
             s, m   = rec["simple"], rec["metal"]
             ws, wm = float(s["w_span"]), float(m["w_span"])
             mode   = self.cfg.pick_primary
 
-            # original True/False/blended logic unchanged...
+            # same coloring logic you already had...
             if mode is True:
                 prefer_simple = ws >= wm
                 if prefer_simple and s["idx"] > 0:
@@ -482,6 +510,7 @@ class RectAEPAWColorPlotter:
                 else:
                     color = metal_colors.get(m["idx"], "black")
             elif mode == "blended":
+                # your existing blended‐color code
                 full_idx = int(rec["full_idx"])
                 have_all = full_idx in by_full
                 if have_all:
@@ -501,11 +530,15 @@ class RectAEPAWColorPlotter:
             else:
                 raise ValueError("pick_primary must be True, False, or 'blended'")
 
-            line = ax_f.vlines(E_full, 0, 1,
-                               color=color,
-                               linestyle="-",
-                               lw=self.cfg.lw_stick)
+            line = ax_f.vlines(
+                E_full, 0, 1,
+                color=color,
+                linestyle="-",
+                lw=self.cfg.lw_stick
+            )
             artists_f.append(line)
+
+            # and the hover text as before
             hover_f.append(
                 f"full_idx: {int(rec['full_idx'])}\n"
                 f"E_full: {E_full:+.3f}\n"
@@ -517,6 +550,8 @@ class RectAEPAWColorPlotter:
                 f"w_span {m['w_span']:.5f}\n"
                 f"residual: {rec['residual']:.5f}"
             )
+
+        # attach your mplcursors or static text here...
 
         ax_f.set_title(self.cfg.title_full)
         ax_f.set_ylabel(self.cfg.ylabel)
@@ -543,3 +578,127 @@ class RectAEPAWColorPlotter:
             )
 
         return fig, axes
+
+    def plot_component_vs_full(
+        self,
+        rect_path: str,
+        comp_type: str,
+        comp_idx: int,
+        bonding: bool = False
+    ):
+        """
+        Two‐panel: top shows one component stick; bottom shows all full‐system
+        matches for that component state, with bonding aggregation:
+          - drop any state that starts >0 eV and ends >0 eV
+          - aggregate all up‐crossing overlaps at 0 eV into one solid line
+          - also draw dotted lines at each crossing‐final energy
+          - down‐cross or always ≤0 eV: single solid line at final energy
+        """
+        # load full‐matches table
+        all_path = os.path.join(
+            os.path.dirname(rect_path),
+            "band_matches_rectangular_all.txt"
+        )
+        by_full, simple_pairs, metal_pairs = _read_ov_all(all_path)
+
+        # build pivot colors
+        simple_colors = self._build_colors_rank_pivot(
+            simple_pairs, self.cfg.cmap_name_simple, self.cfg.center_simple,
+            power_neg=self.cfg.power_simple_neg,
+            power_pos=self.cfg.power_simple_pos
+        )
+        metal_colors  = self._build_colors_rank_pivot(
+            metal_pairs, self.cfg.cmap_name_metal, self.cfg.center_metal,
+            power_neg=self.cfg.power_metal_neg,
+            power_pos=self.cfg.power_metal_pos
+        )
+
+        # choose map & highlight color
+        if comp_type == "simple":
+            comp_map, color_map = dict(simple_pairs), simple_colors
+        elif comp_type == "metal":
+            comp_map, color_map = dict(metal_pairs), metal_colors
+        else:
+            raise ValueError("comp_type must be 'simple' or 'metal'")
+
+        color = color_map.get(comp_idx, "black")
+        E_comp = comp_map.get(comp_idx)
+        if E_comp is None:
+            raise KeyError(f"{comp_type} state {comp_idx} not found")
+
+        # two‐panel figure
+        fig, (ax_top, ax_bot) = plt.subplots(2, 1, sharex=True, figsize=(8, 6))
+
+        # Top: single component stick
+        ax_top.vlines(E_comp, 0, 1,
+                      color=color, linestyle="-",
+                      linewidth=self.cfg.lw_stick)
+        ax_top.set_ylabel(self.cfg.ylabel)
+        ax_top.set_title(f"{comp_type.capitalize()} state {comp_idx}")
+        if self.cfg.show_fermi_line:
+            ax_top.axvline(0.0,
+                           color=self.cfg.fermi_line_color,
+                           linestyle=self.cfg.fermi_line_style,
+                           linewidth=1.0, alpha=0.7)
+
+        # Bottom: gather & style full‐system matches
+        aggregated_up_ov = 0.0
+        dotted_matches: List[Tuple[float, float]] = []
+        full_entries:   List[Tuple[float, float, str]] = []
+
+        for recs in by_full.values():
+            for r in recs.get(comp_type, []):
+                if r["comp_idx"] != comp_idx:
+                    continue
+                E0     = float(r["E"])
+                dE     = float(r["dE"])
+                ov     = float(r["ov"])
+                E_full = E0 + dE
+
+                if bonding:
+                    # skip pure above-0 states
+                    if E0 > 0 and E_full > 0:
+                        continue
+
+                    # up-crossing: aggregate at zero, record dotted final
+                    if E0 < 0 and E_full > 0:
+                        aggregated_up_ov += ov
+                        #dotted_matches.append((E_full, ov))
+                        continue
+
+                    # down-cross or always ≤0
+                    full_entries.append((E_full, ov, "solid"))
+                else:
+                    # non-bonding: single solid at final
+                    full_entries.append((E_full, ov, "solid"))
+
+        # add one aggregated solid at 0 eV if any ups were clipped
+        if bonding and aggregated_up_ov > 0:
+            full_entries.append((0.0, aggregated_up_ov, "solid"))
+            # then add each dotted final‐energy entry
+            '''
+            for E_f, ov in dotted_matches:
+                full_entries.append((E_f, ov, "dotted"))
+            '''
+
+        # draw largest shifts last (so big movers sit on top)
+        full_entries.sort(key=lambda x: abs(x[0] - E_comp))
+
+        # plot bottom sticks
+        for E_plot, ov, style in full_entries:
+            ls = ":" if style == "dotted" else "-"
+            ax_bot.vlines(E_plot, 0, ov,
+                          color=color,
+                          linestyle=ls,
+                          linewidth=self.cfg.lw_stick)
+
+        ax_bot.set_ylabel("ov")
+        ax_bot.set_xlabel(self.cfg.xlabel)
+        if self.cfg.show_fermi_line:
+            ax_bot.axvline(0.0,
+                           color=self.cfg.fermi_line_color,
+                           linestyle=self.cfg.fermi_line_style,
+                           linewidth=1.0, alpha=0.7)
+
+        fig.tight_layout()
+        return fig, (ax_top, ax_bot)
