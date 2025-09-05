@@ -590,20 +590,22 @@ class RectAEPAWColorPlotter:
         lighten_factor: float = 0.5
     ):
         """
-        Overlay one component stick + all its full-system matches, aggregating
-        any up-crossing overlaps into a single 0 eV line.
+        Overlay one component stick + all its full‐system matches.
+        If bonding=True:
+          • pure‐above‐0 states (E0>0 & E_full>0) are plotted dotted
+          • up‐crossers (E0<0 & E_full>0) are aggregated at 0 eV (solid)
+            and shown dotted at their true E_full
+          • all other states (down‐cross or always ≤0) are solid at E_full
+        No dashed lines are used—only solid and dotted.
         """
-
-        import matplotlib.colors as mcolors
-
-        # 1) load all-matches
+        # 1) load all‐matches
         all_path = os.path.join(
             os.path.dirname(rect_path),
             "band_matches_rectangular_all.txt"
         )
         by_full, simple_pairs, metal_pairs = _read_ov_all(all_path)
 
-        # 2) build pivoted color maps
+        # 2) build pivot color maps
         simple_colors = self._build_colors_rank_pivot(
             simple_pairs, self.cfg.cmap_name_simple, self.cfg.center_simple,
             power_neg=self.cfg.power_simple_neg,
@@ -617,7 +619,7 @@ class RectAEPAWColorPlotter:
             mode="power"
         )
 
-        # 3) pick comp map & base color
+        # 3) pick comp_map & base color
         if comp_type == "simple":
             comp_map   = dict(simple_pairs)
             base_color = simple_colors.get(comp_idx, "black")
@@ -635,11 +637,14 @@ class RectAEPAWColorPlotter:
         def lighten(c, frac):
             rgb = np.array(mcolors.to_rgb(c))
             return (* (rgb + (1.0 - rgb) * frac), 1.0)
+
         light_color = lighten(base_color, lighten_factor)
 
-        # 5) gather & aggregate
-        agg_zero_ov = 0.0
-        matches     = []   # will hold (E_plot, ov) for E_plot>0 or pure-below
+        # 5) gather & classify entries
+        agg_zero_ov    = 0.0
+        dotted_matches = []
+        full_entries   = []
+
         for recs in by_full.values():
             for r in recs.get(comp_type, []):
                 if r["comp_idx"] != comp_idx:
@@ -651,29 +656,37 @@ class RectAEPAWColorPlotter:
                 E_full = E0 + dE
 
                 if bonding:
-                    # drop pure-above-0
+                    # pure‐above‐0: dotted at final
                     if E0 > 0 and E_full > 0:
+                        full_entries.append((E_full, ov, "dotted"))
                         continue
-                    # clamp any up-cross to 0 and aggregate
+
+                    # up‐cross: aggregate at 0, remember for dotted final
                     if E0 < 0 and E_full > 0:
                         agg_zero_ov += ov
+                        dotted_matches.append((E_full, ov))
                         continue
 
-                # for all others (bonding or not), plot at true E_full
-                matches.append((E_full, ov))
+                    # down‐cross or ≤0: solid at final
+                    full_entries.append((E_full, ov, "solid"))
+                else:
+                    # non‐bonding: solid at final
+                    full_entries.append((E_full, ov, "solid"))
 
-        # 6) build the final list to draw:
-        #    - first: the one aggregated 0 eV entry (if any)
-        #    - then: all other matches at their E_full
-        draw_entries = []
+        # 6) build final draw list
+        draw_entries: List[Tuple[float, float, str]] = []
         if bonding and agg_zero_ov > 0:
-            draw_entries.append((0.0, agg_zero_ov))
-        draw_entries.extend(matches)
+            # one cumulative solid at 0
+            draw_entries.append((0.0, agg_zero_ov, "solid"))
+            # each up‐cross final as dotted
+            draw_entries += [(Ef, ov, "dotted") for Ef, ov in dotted_matches]
 
-        # 7) draw everything on a single Axes
+        # then all the others (pure‐above dotted or solid)
+        draw_entries += full_entries
+
+        # 7) render
         fig, ax = plt.subplots(figsize=self.cfg.figsize)
 
-        # optional Fermi line
         if self.cfg.show_fermi_line:
             ax.axvline(
                 0.0,
@@ -682,16 +695,16 @@ class RectAEPAWColorPlotter:
                 linewidth=1.0, alpha=0.7
             )
 
-        # full-system matches in light shade
-        for E_plot, ov in draw_entries:
+        for E_plot, ov, style in draw_entries:
+            ls = ":" if style == "dotted" else "-"
             ax.vlines(
                 E_plot, 0, ov,
                 color=light_color,
-                linestyle="-",
+                linestyle=ls,
                 linewidth=self.cfg.lw_stick
             )
 
-        # component stick on top
+        # highlight component stick on top
         ax.vlines(
             E_comp, 0, 1,
             color=base_color,
