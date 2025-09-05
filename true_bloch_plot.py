@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
 
 try:
     import mplcursors
@@ -579,126 +581,127 @@ class RectAEPAWColorPlotter:
 
         return fig, axes
 
-    def plot_component_vs_full(
+    def plot_component_and_matches(
         self,
         rect_path: str,
         comp_type: str,
         comp_idx: int,
-        bonding: bool = False
+        bonding: bool = False,
+        lighten_factor: float = 0.5
     ):
         """
-        Two‐panel: top shows one component stick; bottom shows all full‐system
-        matches for that component state, with bonding aggregation:
-          - drop any state that starts >0 eV and ends >0 eV
-          - aggregate all up‐crossing overlaps at 0 eV into one solid line
-          - also draw dotted lines at each crossing‐final energy
-          - down‐cross or always ≤0 eV: single solid line at final energy
+        Overlay one component stick + all its full-system matches, aggregating
+        any up-crossing overlaps into a single 0 eV line.
         """
-        # load full‐matches table
+
+        import matplotlib.colors as mcolors
+
+        # 1) load all-matches
         all_path = os.path.join(
             os.path.dirname(rect_path),
             "band_matches_rectangular_all.txt"
         )
         by_full, simple_pairs, metal_pairs = _read_ov_all(all_path)
 
-        # build pivot colors
+        # 2) build pivoted color maps
         simple_colors = self._build_colors_rank_pivot(
             simple_pairs, self.cfg.cmap_name_simple, self.cfg.center_simple,
             power_neg=self.cfg.power_simple_neg,
-            power_pos=self.cfg.power_simple_pos
+            power_pos=self.cfg.power_simple_pos,
+            mode="power"
         )
-        metal_colors  = self._build_colors_rank_pivot(
+        metal_colors = self._build_colors_rank_pivot(
             metal_pairs, self.cfg.cmap_name_metal, self.cfg.center_metal,
             power_neg=self.cfg.power_metal_neg,
-            power_pos=self.cfg.power_metal_pos
+            power_pos=self.cfg.power_metal_pos,
+            mode="power"
         )
 
-        # choose map & highlight color
+        # 3) pick comp map & base color
         if comp_type == "simple":
-            comp_map, color_map = dict(simple_pairs), simple_colors
+            comp_map   = dict(simple_pairs)
+            base_color = simple_colors.get(comp_idx, "black")
         elif comp_type == "metal":
-            comp_map, color_map = dict(metal_pairs), metal_colors
+            comp_map   = dict(metal_pairs)
+            base_color = metal_colors.get(comp_idx, "black")
         else:
             raise ValueError("comp_type must be 'simple' or 'metal'")
 
-        color = color_map.get(comp_idx, "black")
         E_comp = comp_map.get(comp_idx)
         if E_comp is None:
             raise KeyError(f"{comp_type} state {comp_idx} not found")
 
-        # two‐panel figure
-        fig, (ax_top, ax_bot) = plt.subplots(2, 1, sharex=True, figsize=(8, 6))
+        # 4) compute lighter shade for matches
+        def lighten(c, frac):
+            rgb = np.array(mcolors.to_rgb(c))
+            return (* (rgb + (1.0 - rgb) * frac), 1.0)
+        light_color = lighten(base_color, lighten_factor)
 
-        # Top: single component stick
-        ax_top.vlines(E_comp, 0, 1,
-                      color=color, linestyle="-",
-                      linewidth=self.cfg.lw_stick)
-        ax_top.set_ylabel(self.cfg.ylabel)
-        ax_top.set_title(f"{comp_type.capitalize()} state {comp_idx}")
-        if self.cfg.show_fermi_line:
-            ax_top.axvline(0.0,
-                           color=self.cfg.fermi_line_color,
-                           linestyle=self.cfg.fermi_line_style,
-                           linewidth=1.0, alpha=0.7)
-
-        # Bottom: gather & style full‐system matches
-        aggregated_up_ov = 0.0
-        dotted_matches: List[Tuple[float, float]] = []
-        full_entries:   List[Tuple[float, float, str]] = []
-
+        # 5) gather & aggregate
+        agg_zero_ov = 0.0
+        matches     = []   # will hold (E_plot, ov) for E_plot>0 or pure-below
         for recs in by_full.values():
             for r in recs.get(comp_type, []):
                 if r["comp_idx"] != comp_idx:
                     continue
+
                 E0     = float(r["E"])
                 dE     = float(r["dE"])
                 ov     = float(r["ov"])
                 E_full = E0 + dE
 
                 if bonding:
-                    # skip pure above-0 states
+                    # drop pure-above-0
                     if E0 > 0 and E_full > 0:
                         continue
-
-                    # up-crossing: aggregate at zero, record dotted final
+                    # clamp any up-cross to 0 and aggregate
                     if E0 < 0 and E_full > 0:
-                        aggregated_up_ov += ov
-                        #dotted_matches.append((E_full, ov))
+                        agg_zero_ov += ov
                         continue
 
-                    # down-cross or always ≤0
-                    full_entries.append((E_full, ov, "solid"))
-                else:
-                    # non-bonding: single solid at final
-                    full_entries.append((E_full, ov, "solid"))
+                # for all others (bonding or not), plot at true E_full
+                matches.append((E_full, ov))
 
-        # add one aggregated solid at 0 eV if any ups were clipped
-        if bonding and aggregated_up_ov > 0:
-            full_entries.append((0.0, aggregated_up_ov, "solid"))
-            # then add each dotted final‐energy entry
-            '''
-            for E_f, ov in dotted_matches:
-                full_entries.append((E_f, ov, "dotted"))
-            '''
+        # 6) build the final list to draw:
+        #    - first: the one aggregated 0 eV entry (if any)
+        #    - then: all other matches at their E_full
+        draw_entries = []
+        if bonding and agg_zero_ov > 0:
+            draw_entries.append((0.0, agg_zero_ov))
+        draw_entries.extend(matches)
 
-        # draw largest shifts last (so big movers sit on top)
-        full_entries.sort(key=lambda x: abs(x[0] - E_comp))
+        # 7) draw everything on a single Axes
+        fig, ax = plt.subplots(figsize=self.cfg.figsize)
 
-        # plot bottom sticks
-        for E_plot, ov, style in full_entries:
-            ls = ":" if style == "dotted" else "-"
-            ax_bot.vlines(E_plot, 0, ov,
-                          color=color,
-                          linestyle=ls,
-                          linewidth=self.cfg.lw_stick)
-
-        ax_bot.set_ylabel("ov")
-        ax_bot.set_xlabel(self.cfg.xlabel)
+        # optional Fermi line
         if self.cfg.show_fermi_line:
-            ax_bot.axvline(0.0,
-                           color=self.cfg.fermi_line_color,
-                           linestyle=self.cfg.fermi_line_style,
-                           linewidth=1.0, alpha=0.7)
+            ax.axvline(
+                0.0,
+                color=self.cfg.fermi_line_color,
+                linestyle=self.cfg.fermi_line_style,
+                linewidth=1.0, alpha=0.7
+            )
 
+        # full-system matches in light shade
+        for E_plot, ov in draw_entries:
+            ax.vlines(
+                E_plot, 0, ov,
+                color=light_color,
+                linestyle="-",
+                linewidth=self.cfg.lw_stick
+            )
+
+        # component stick on top
+        ax.vlines(
+            E_comp, 0, 1,
+            color=base_color,
+            linestyle="-",
+            linewidth=self.cfg.lw_stick
+        )
+
+        ax.set_xlabel(self.cfg.xlabel)
+        ax.set_ylabel(self.cfg.ylabel)
+        ax.set_title(f"{comp_type.capitalize()} state {comp_idx} overlay")
+        ax.set_ylim(0, 1.05)
         fig.tight_layout()
-        return fig, (ax_top, ax_bot)
+        return fig, ax
