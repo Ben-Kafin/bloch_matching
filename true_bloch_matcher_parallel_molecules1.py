@@ -613,11 +613,11 @@ def run_match(
 
 if __name__ == "__main__":
     molecule_dirs = [
-        r'C:/Users/Benjamin Kafin/Documents/VASP/lone/NHC2Au/NHC_left/',
-        r'C:/Users/Benjamin Kafin/Documents/VASP/lone/NHC2Au/NHC_right/'
+        r'dir',
+        r'dir'
     ]
-    metal_dir  = r'C:/Users/Benjamin Kafin/Documents/VASP/lone/NHC2Au/adatom_surface/'
-    full_dir   = r'C:/Users/Benjamin Kafin/Documents/VASP/lone/NHC2Au/'
+    metal_dir  = r'dir'
+    full_dir   = r'dir'
 
     match_files = run_match(
         molecule_dirs=molecule_dirs,
@@ -632,4 +632,5 @@ if __name__ == "__main__":
         reuse_cached=True
     )
     for mf in match_files:
+
         print(f"[MATCH] Written matches to '{mf}'")
